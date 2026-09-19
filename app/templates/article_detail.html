@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}{{ article.title }} · GTv Studio{% endblock %}
+{% block content %}
+<a class="back" href="{{ url_for('main.articles') }}">← Retour à la bibliothèque</a>
+<div class="detail-heading"><div><p class="eyebrow accent">{{ article.category }} · {{ article.updated_at[:10] }}</p><h1>{{ article.title }}</h1><span class="badge {{ article.status }}">{{ {'draft':'Brouillon','review':'À vérifier','validated':'Validé','audio':'Audio généré'}.get(article.status) }}</span></div><button class="button primary generate" data-url="{{ url_for('main.generate', article_id=article.id) }}">✦ Générer avec l’IA</button></div>
+<div class="detail-grid">
+  <section class="panel"><p class="eyebrow">ÉDITION</p>
+    <form method="post" action="{{ url_for('main.save_article', article_id=article.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label>Article final<textarea name="final_content" rows="18" placeholder="Le texte généré apparaîtra ici.">{{ current_version.content if current_version else '' }}</textarea></label><div class="form-actions"><button class="button ghost" type="submit">Enregistrer</button>{% if article.status in ['review','draft'] %}<button class="button dark" formaction="{{ url_for('main.validate', article_id=article.id) }}">Valider l'article <span>→</span></button>{% endif %}</div></form>
+    <p class="eyebrow version-title">HISTORIQUE DES VERSIONS</p>{% for version in versions %}<div class="version-row"><span>Version {{ version.version_number }} · {{ version.version_type }}</span><small>{{ version.created_at }}</small></div>{% else %}<p class="muted">Aucune version générée.</p>{% endfor %}
+  </section>
+  <aside><div class="panel meta"><p class="eyebrow">SOURCE BRUTE</p><p>{{ article.raw_content }}</p>{% if article.source %}<small>Source : {{ article.source }}</small>{% endif %}</div>
+    <div class="panel audio"><p class="eyebrow">AUDIOS</p>{% for audio in audios %}{% if audio.status == 'ready' %}<audio controls src="{{ url_for('main.audio_file', filename=audio.file_path) }}"></audio><a class="text-link" href="{{ url_for('main.audio_file', filename=audio.file_path) }}" download>Télécharger l'audio ↓</a>{% else %}<p class="muted">Audio {{ audio.status }}</p>{% endif %}{% else %}<p class="muted">Validez l'article pour générer sa version audio.</p>{% endfor %}<form method="post" action="{{ url_for('main.audio', article_id=article.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button primary" {% if article.status not in ['validated','audio'] %}disabled{% endif %}>Générer un audio <span>→</span></button></form></div>
+  </aside>
+</div>
+{% endblock %}

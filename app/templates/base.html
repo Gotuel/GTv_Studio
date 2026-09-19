@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}GTv Studio{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+</head>
+<body class="{% if landing|default(false) %}landing-page{% else %}app-page{% endif %}">
+{% if landing|default(false) %}
+  <header class="public-header">
+    <a class="public-brand" href="{{ url_for('main.index') }}"><span>GTv</span> Studio</a>
+    <nav class="public-nav"><a href="#fonctionnalites">Fonctionnalités</a><a href="#workflow">Le parcours</a><a href="#apropos">À propos</a><a href="#contact">Contact</a></nav>
+    <a class="button button-outline" href="{{ url_for('main.new_article') }}">Accéder à l’espace <span>↗</span></a>
+  </header>
+{% else %}
+  <aside class="sidebar">
+    <a class="brand" href="{{ url_for('main.dashboard') }}"><span>GTv</span> STUDIO</a>
+    <nav><a class="{% if request.endpoint == 'main.dashboard' %}active{% endif %}" href="{{ url_for('main.dashboard') }}">⌂ Tableau de bord</a><a class="{% if request.endpoint == 'main.new_article' %}active{% endif %}" href="{{ url_for('main.new_article') }}">＋ Nouveau contenu</a><a class="{% if request.endpoint == 'main.articles' or request.endpoint == 'main.article_detail' %}active{% endif %}" href="{{ url_for('main.articles') }}">▤ Articles</a><a href="{{ url_for('main.index') }}">↗ Page de présentation</a></nav>
+    <div class="sidebar-note">De la source brute à la voix.<br><small>Gabon Télévision</small></div>
+  </aside>
+  <main class="main"><header><span class="eyebrow">ESPACE ÉDITORIAL · GTV STUDIO</span><span class="status-dot">● Système opérationnel</span></header>
+{% endif %}
+    {% with messages = get_flashed_messages(with_categories=true) %}{% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}{% endwith %}
+    {% block content %}{% endblock %}
+{% if not landing|default(false) %}
+  </main>
+{% endif %}
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}GTv Studio · La rédaction augmentée{% endblock %}
+{% block content %}
+<main class="landing-main">
+  <section class="landing-hero">
+    <div class="hero-copy reveal">
+      <p class="landing-kicker"><span></span> L'ATELIER NUMÉRIQUE DE GABON TÉLÉVISION</p>
+      <h1>Donnez une voix<br>à <em>l'information.</em></h1>
+      <p class="hero-text">GTv Studio accompagne les équipes éditoriales, de la matière brute jusqu'à l'article prêt à publier et sa version audio.</p>
+      <div class="hero-actions"><a class="button button-gold button-large" href="{{ url_for('main.new_article') }}">Démarrer une génération <span>→</span></a><a class="scroll-link" href="#fonctionnalites">Découvrir la plateforme <span>↓</span></a></div>
+      <div class="hero-proof"><div><strong>01</strong><span>Source brute</span></div><i></i><div><strong>02</strong><span>Article structuré</span></div><i></i><div><strong>03</strong><span>Audio prêt</span></div></div>
+    </div>
+    <div class="hero-art reveal delay-1" aria-label="Illustration du studio éditorial">
+      <div class="orb orb-one"></div><div class="orb orb-two"></div><div class="studio-card card-main"><span class="mini-label">EN DIRECT DE LA RÉDACTION</span><div class="waveform"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><b>Votre information,<br><em>claire et incarnée.</em></b><small>GTv Studio · Édition assistée</small></div><div class="studio-card card-float"><span class="check">✓</span><div><b>Article validé</b><small>Prêt pour l'audio</small></div></div><div class="studio-card card-stat"><strong>3×</strong><span>plus rapide</span></div>
+    </div>
+  </section>
+  <section class="trust-strip"><span>CONÇU POUR LES RÉDACTIONS QUI FONT AVANCER LE GABON</span><b>GABON TÉLÉVISION</b><span>RIGUEUR · RAPIDITÉ · IMPACT</span></section>
+  <section class="landing-section feature-section" id="fonctionnalites">
+    <div class="section-intro reveal"><p class="landing-kicker"><span></span> UNE CHAÎNE ÉDITORIALE, UN SEUL ESPACE</p><h2>Du premier mot<br>au <em>dernier souffle.</em></h2><p>Chaque outil a été pensé pour simplifier le travail journalistique sans jamais remplacer votre regard.</p></div>
+    <div class="feature-grid">
+      <article class="feature-card feature-blue reveal"><div class="feature-icon">✦</div><span class="feature-number">01</span><h3>Génération d'article</h3><p>Transformez une dépêche, une transcription ou vos notes en un article structuré, fidèle et adapté au niveau de rédaction choisi.</p><a href="{{ url_for('main.new_article') }}">Commencer →</a></article>
+      <article class="feature-card feature-light reveal delay-1"><div class="feature-icon icon-dark">◌</div><span class="feature-number">02</span><h3>Édition maîtrisée</h3><p>Relisez, corrigez et validez chaque contenu. Vos versions restent conservées pour travailler en toute confiance.</p><a href="{{ url_for('main.dashboard') }}">Voir l'espace →</a></article>
+      <article class="feature-card feature-dark reveal delay-2"><div class="feature-icon icon-gold">))</div><span class="feature-number">03</span><h3>Une voix pour vos articles</h3><p>Générez une version audio de votre article validé, écoutez-la directement et téléchargez-la pour vos usages.</p><a href="{{ url_for('main.new_article') }}">Découvrir →</a></article>
+    </div>
+  </section>
+  <section class="landing-section workflow-section" id="workflow"><div class="workflow-visual reveal"><div class="workflow-ring">GTv<br><span>STUDIO</span></div><div class="pulse-line"></div></div><div class="workflow-copy reveal delay-1"><p class="landing-kicker"><span></span> UN FLUX QUI VOUS RESSEMBLE</p><h2>Votre expertise.<br>Notre <em>accélérateur.</em></h2><div class="step-list"><div><b>01</b><p><strong>Déposez votre matière</strong><br>Ajoutez le sujet, la source et votre contenu brut.</p></div><div><b>02</b><p><strong>Affinez avec l'intelligence artificielle</strong><br>Choisissez le ton et gardez la main sur chaque mot.</p></div><div><b>03</b><p><strong>Diffusez autrement</strong><br>Validez, écoutez et donnez une nouvelle portée à votre actualité.</p></div></div><a class="button button-blue" href="{{ url_for('main.new_article') }}">Démarrer maintenant <span>→</span></a></div></section>
+  <section class="cta-section reveal" id="apropos"><p class="landing-kicker"><span></span> L'AVENIR DE LA RÉDACTION S'ÉCRIT MAINTENANT</p><h2>Prêt à passer<br>à la <em>suite ?</em></h2><a class="button button-gold button-large" href="{{ url_for('main.new_article') }}">Lancer mon premier contenu <span>→</span></a></section>
+  <section class="contact-section" id="contact"><div><p class="landing-kicker"><span></span> UNE QUESTION ?</p><h2>Parlons de<br>votre rédaction.</h2></div><div class="contact-details"><p>GTv Studio est conçu pour accompagner les équipes de Gabon Télévision dans la création de contenus plus rapides, plus cohérents et plus accessibles.</p><a href="{{ url_for('main.new_article') }}">Contacter la rédaction <span>↗</span></a><span>Libreville, Gabon · Gabon Télévision</span></div></section>
+  <footer class="public-footer"><a class="public-brand" href="#"><span>GTv</span> Studio</a><p>La technologie au service du récit.</p><div><a href="#fonctionnalites">Fonctionnalités</a><a href="#apropos">Qui sommes-nous</a><a href="#contact">Contact</a></div><small>© 2026 GTv Studio · Gabon Télévision. Tous droits réservés.</small></footer>
+</main>
+{% endblock %}
