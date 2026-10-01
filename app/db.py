@@ -66,6 +66,77 @@ CREATE INDEX IF NOT EXISTS idx_audios_article ON audios (article_id);
 """
 
 DEFAULT_CATEGORIES = ("Actualités", "Politique", "Culture", "Sport", "Société")
+POSTGRES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS categories (
+    id BIGSERIAL PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    slug TEXT NOT NULL UNIQUE,
+    is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS articles (
+    id BIGSERIAL PRIMARY KEY,
+    title TEXT NOT NULL,
+    raw_content TEXT NOT NULL,
+    level TEXT NOT NULL DEFAULT 'intermediate',
+    language TEXT NOT NULL DEFAULT 'fr',
+    category_id BIGINT NOT NULL REFERENCES categories(id),
+    source TEXT,
+    status TEXT NOT NULL DEFAULT 'draft'
+        CHECK (status IN ('draft', 'generating', 'review', 'validated', 'audio')),
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS article_versions (
+    id BIGSERIAL PRIMARY KEY,
+    article_id BIGINT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+    version_number INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    version_type TEXT NOT NULL
+        CHECK (version_type IN ('ai_generated', 'manual', 'validated')),
+    is_current INTEGER NOT NULL DEFAULT 1 CHECK (is_current IN (0, 1)),
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (article_id, version_number)
+);
+CREATE TABLE IF NOT EXISTS audios (
+    id BIGSERIAL PRIMARY KEY,
+    article_id BIGINT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+    file_path TEXT NOT NULL,
+    language TEXT NOT NULL DEFAULT 'fr',
+    provider TEXT NOT NULL DEFAULT 'gtts',
+    status TEXT NOT NULL DEFAULT 'processing'
+        CHECK (status IN ('processing', 'ready', 'failed')),
+    error_message TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_articles_category ON articles (category_id);
+CREATE INDEX IF NOT EXISTS idx_articles_status ON articles (status);
+CREATE INDEX IF NOT EXISTS idx_articles_created ON articles (created_at);
+CREATE INDEX IF NOT EXISTS idx_versions_article ON article_versions (article_id);
+CREATE INDEX IF NOT EXISTS idx_audios_article ON audios (article_id);
+"""
+
+
+class PostgresConnection:
+    def __init__(self, connection):
+        self.connection = connection
+
+    def execute(self, sql, parameters=()):
+        cursor = self.connection.cursor()
+        cursor.execute(sql.replace("?", "%s"), parameters)
+        return cursor
+
+    def executescript(self, sql):
+        with self.connection.cursor() as cursor:
+            cursor.execute(sql)
+
+    def commit(self):
+        self.connection.commit()
+
+    def close(self):
+        self.connection.close()
+
+
 LEGACY_SUPPORT_SCHEMA = """
 CREATE TABLE IF NOT EXISTS categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -98,13 +169,26 @@ CREATE TABLE IF NOT EXISTS audios (
 
 def get_db():
     if "db" not in g:
-        Path(current_app.config["DATABASE_PATH"]).parent.mkdir(
-            parents=True, exist_ok=True
-        )
-        g.db = sqlite3.connect(current_app.config["DATABASE_PATH"], timeout=15)
-        g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA foreign_keys = ON")
-        g.db.execute("PRAGMA busy_timeout = 15000")
+        database_url = current_app.config.get("DATABASE_URL")
+        if database_url:
+            import psycopg
+            from psycopg.rows import dict_row
+
+            connection = psycopg.connect(
+                database_url,
+                connect_timeout=10,
+                row_factory=dict_row,
+                application_name="gtv-studio",
+            )
+            g.db = PostgresConnection(connection)
+        else:
+            Path(current_app.config["DATABASE_PATH"]).parent.mkdir(
+                parents=True, exist_ok=True
+            )
+            g.db = sqlite3.connect(current_app.config["DATABASE_PATH"], timeout=15)
+            g.db.row_factory = sqlite3.Row
+            g.db.execute("PRAGMA foreign_keys = ON")
+            g.db.execute("PRAGMA busy_timeout = 15000")
     return g.db
 
 
@@ -126,7 +210,8 @@ def _slug(value):
 def _seed_categories(db):
     for name in DEFAULT_CATEGORIES:
         db.execute(
-            "INSERT OR IGNORE INTO categories (name, slug) VALUES (?, ?)",
+            "INSERT INTO categories (name, slug) VALUES (?, ?) "
+            "ON CONFLICT (name) DO NOTHING",
             (name, _slug(name)),
         )
 
@@ -136,11 +221,11 @@ def _category_id(db, name):
     row = db.execute("SELECT id FROM categories WHERE name = ?", (name,)).fetchone()
     if row:
         return row["id"]
-    cursor = db.execute(
-        "INSERT INTO categories (name, slug) VALUES (?, ?)",
+    row = db.execute(
+        "INSERT INTO categories (name, slug) VALUES (?, ?) RETURNING id",
         (name, _slug(name)),
-    )
-    return cursor.lastrowid
+    ).fetchone()
+    return row["id"]
 
 
 def _is_legacy_articles(db):
@@ -317,6 +402,11 @@ def _restore_missing_legacy_data(db, database_path):
 
 def init_db():
     db = get_db()
+    if current_app.config.get("DATABASE_URL"):
+        db.executescript(POSTGRES_SCHEMA)
+        _seed_categories(db)
+        db.commit()
+        return
     database_path = Path(current_app.config["DATABASE_PATH"])
     has_articles = db.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'articles'"
@@ -350,6 +440,7 @@ def init_app(app):
     app.teardown_appcontext(close_db)
     app.cli.add_command(init_db_command)
     app.cli.add_command(inspect_db_command)
+    app.cli.add_command(migrate_local_db_command)
 
 
 @click.command("init-db")
@@ -361,9 +452,15 @@ def init_db_command():
 @click.command("inspect-db")
 def inspect_db_command():
     db = get_db()
-    tables = db.execute(
-        "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
-    ).fetchall()
+    if current_app.config.get("DATABASE_URL"):
+        tables = db.execute(
+            """SELECT table_name AS name FROM information_schema.tables
+            WHERE table_schema = 'public' ORDER BY table_name"""
+        ).fetchall()
+    else:
+        tables = db.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+        ).fetchall()
     for table in tables:
         if table["name"] == "sqlite_sequence":
             continue
@@ -371,3 +468,97 @@ def inspect_db_command():
             f'SELECT COUNT(*) AS total FROM "{table["name"]}"'
         ).fetchone()["total"]
         click.echo(f'{table["name"]}: {count} enregistrement(s)')
+
+
+@click.command("migrate-local-db")
+@click.option(
+    "--source",
+    default="instance/2gc_converter.sqlite3",
+    show_default=True,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+def migrate_local_db_command(source):
+    if not current_app.config.get("DATABASE_URL"):
+        raise click.ClickException("DATABASE_URL doit pointer vers PostgreSQL.")
+    if current_app.config["STORAGE_BACKEND"] != "supabase":
+        raise click.ClickException("STORAGE_BACKEND doit être « supabase ».")
+
+    local = sqlite3.connect(source)
+    local.row_factory = sqlite3.Row
+    remote = get_db()
+    from .storage import upload_audio
+
+    try:
+        for category in local.execute("SELECT * FROM categories"):
+            remote.execute(
+                """INSERT INTO categories (id, name, slug, is_active, created_at)
+                VALUES (?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING""",
+                tuple(category[key] for key in (
+                    "id", "name", "slug", "is_active", "created_at"
+                )),
+            )
+
+        for article in local.execute("SELECT * FROM articles"):
+            remote.execute(
+                """INSERT INTO articles
+                (id, title, raw_content, level, language, category_id, source,
+                 status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (id) DO NOTHING""",
+                tuple(article[key] for key in (
+                    "id", "title", "raw_content", "level", "language",
+                    "category_id", "source", "status", "created_at", "updated_at"
+                )),
+            )
+
+        for version in local.execute("SELECT * FROM article_versions"):
+            remote.execute(
+                """INSERT INTO article_versions
+                (id, article_id, version_number, content, version_type, is_current, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (id) DO NOTHING""",
+                tuple(version[key] for key in (
+                    "id", "article_id", "version_number", "content",
+                    "version_type", "is_current", "created_at"
+                )),
+            )
+
+        audio_directory = Path(current_app.config["AUDIO_STORAGE_PATH"])
+        for audio in local.execute("SELECT * FROM audios"):
+            audio_path = audio_directory / Path(audio["file_path"]).name
+            if audio["status"] == "ready":
+                if not audio_path.is_file():
+                    raise click.ClickException(
+                        f"Fichier audio local introuvable : {audio_path}"
+                    )
+                upload_audio(
+                    audio["file_path"],
+                    audio_path.read_bytes(),
+                    overwrite=True,
+                )
+            remote.execute(
+                """INSERT INTO audios
+                (id, article_id, file_path, language, provider, status, error_message, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (id) DO NOTHING""",
+                tuple(audio[key] for key in (
+                    "id", "article_id", "file_path", "language",
+                    "provider", "status", "error_message", "created_at"
+                )),
+            )
+
+        for table in ("categories", "articles", "article_versions", "audios"):
+            remote.execute(
+                f"""SELECT setval(
+                    pg_get_serial_sequence('{table}', 'id'),
+                    GREATEST(COALESCE((SELECT MAX(id) FROM {table}), 1), 1),
+                    EXISTS(SELECT 1 FROM {table})
+                )"""
+            )
+        remote.commit()
+    except Exception:
+        remote.connection.rollback()
+        raise
+    finally:
+        local.close()
+    click.echo(f"Migration terminée depuis {source}.")

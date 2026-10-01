@@ -3,9 +3,9 @@ import tempfile
 from unittest.mock import Mock, patch
 
 import pytest
-from unittest.mock import patch
 
 from app import create_app
+from app.db import PostgresConnection
 from app.services import clean_generated_text, generate_article
 
 
@@ -145,3 +145,44 @@ def test_generation_sends_bearer_token(client):
 def test_generated_text_removes_markdown_formatting():
     content = "# Titre\n\n**Introduction** avec `un formatage`.\n\n* Un élément"
     assert clean_generated_text(content) == "Titre\n\nIntroduction avec un formatage.\n\nUn élément"
+
+
+def test_postgres_connection_translates_placeholders():
+    cursor = Mock()
+    connection = Mock()
+    connection.cursor.return_value = cursor
+    db = PostgresConnection(connection)
+    db.execute("SELECT * FROM articles WHERE id = ? AND status = ?", (5, "draft"))
+    cursor.execute.assert_called_once_with(
+        "SELECT * FROM articles WHERE id = %s AND status = %s", (5, "draft")
+    )
+
+
+def test_supabase_audio_storage_uses_server_credentials(client):
+    from app.storage import download_audio, upload_audio
+
+    app = client.application
+    app.config.update(
+        STORAGE_BACKEND="supabase",
+        SUPABASE_URL="https://project.supabase.co",
+        SUPABASE_SERVICE_ROLE_KEY="server-secret",
+        SUPABASE_STORAGE_BUCKET="gtv-audios",
+    )
+    downloaded = Mock(content=b"mp3 bytes")
+    with patch("app.storage.requests.post") as post, patch(
+        "app.storage.requests.get", return_value=downloaded
+    ) as get:
+        post.return_value.raise_for_status.return_value = None
+        with app.app_context():
+            upload_audio("article-1/file.mp3", b"mp3 bytes")
+            data = download_audio("article-1/file.mp3")
+    assert data == b"mp3 bytes"
+    assert post.call_args.args[0] == (
+        "https://project.supabase.co/storage/v1/object/gtv-audios/article-1/file.mp3"
+    )
+    assert post.call_args.kwargs["headers"]["Authorization"] == "Bearer server-secret"
+    assert get.call_args.kwargs["headers"]["apikey"] == "server-secret"
+    assert get.call_args.args[0] == (
+        "https://project.supabase.co/storage/v1/object/authenticated/"
+        "gtv-audios/article-1/file.mp3"
+    )

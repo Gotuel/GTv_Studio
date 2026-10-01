@@ -28,10 +28,15 @@ def create_app(test_config=None):
             "DATABASE_PATH",
             str(Path(app.instance_path) / "2gc_converter.sqlite3"),
         ),
+        DATABASE_URL=os.getenv("DATABASE_URL", ""),
         AUDIO_STORAGE_PATH=os.getenv(
             "AUDIO_STORAGE_PATH",
             str(Path(app.instance_path) / "audio"),
         ),
+        STORAGE_BACKEND=os.getenv("STORAGE_BACKEND", "local").lower(),
+        SUPABASE_URL=os.getenv("SUPABASE_URL", ""),
+        SUPABASE_SERVICE_ROLE_KEY=os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""),
+        SUPABASE_STORAGE_BUCKET=os.getenv("SUPABASE_STORAGE_BUCKET", "gtv-audios"),
         OPENROUTER_API_KEY=os.getenv("OPENROUTER_API_KEY", ""),
         OPENROUTER_MODEL=os.getenv(
             "OPENROUTER_MODEL", "nex-agi/nex-n2.5-mini:free"
@@ -45,6 +50,14 @@ def create_app(test_config=None):
     )
     if test_config:
         app.config.update(test_config)
+    if app.config["STORAGE_BACKEND"] == "supabase" and not (
+        app.config["SUPABASE_URL"] and app.config["SUPABASE_SERVICE_ROLE_KEY"]
+    ):
+        raise RuntimeError(
+            "SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY sont requis pour le stockage Supabase."
+        )
+    if app.config["APP_ENV"] == "production" and not app.config["DATABASE_URL"]:
+        raise RuntimeError("DATABASE_URL doit être définie en production.")
 
     CSRFProtect(app)
     if app_environment == "production":

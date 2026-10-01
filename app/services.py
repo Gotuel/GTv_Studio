@@ -1,6 +1,7 @@
 import logging
 import re
 from pathlib import Path
+import tempfile
 from uuid import uuid4
 
 import requests
@@ -102,9 +103,18 @@ def generate_article(title, raw_content, level, category, language):
 def generate_audio(text, language, article_id):
     from gtts import gTTS
 
+    filename = f"article-{article_id}-{uuid4().hex}.mp3"
+    if current_app.config["STORAGE_BACKEND"] == "supabase":
+        from .storage import upload_audio
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / filename
+            gTTS(text=text, lang=language).save(str(path))
+            upload_audio(filename, path.read_bytes())
+        return filename
+
     directory = Path(current_app.config["AUDIO_STORAGE_PATH"])
     directory.mkdir(parents=True, exist_ok=True)
-    filename = f"article-{article_id}-{uuid4().hex}.mp3"
     path = directory / filename
     gTTS(text=text, lang=language).save(str(path))
     return filename

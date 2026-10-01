@@ -1,6 +1,8 @@
 # GTv Studio
 
 Application éditoriale Flask pour transformer un contenu brut en article journalistique puis en audio.
+Le développement local utilise SQLite ; le déploiement gratuit utilise PostgreSQL et
+le stockage de fichiers Supabase.
 
 ## Structure du projet
 
@@ -24,7 +26,7 @@ GTv_Studio/
 ## Fonctionnalités
 
 - Tableau de bord d'accueil dynamique avec statistiques et activité récente.
-- Création et conservation des contenus dans **SQLite via `sqlite3`**, sans SQLAlchemy.
+- Création et conservation des contenus en local dans **SQLite via `sqlite3`**, sans SQLAlchemy.
 - Base normalisée avec les tables `categories`, `articles`, `article_versions` et `audios`.
 - Génération d'article avec OpenRouter, niveau basic/intermediate/professional.
 - Édition, validation, historique, recherche et filtres.
@@ -45,11 +47,12 @@ Renseignez `OPENROUTER_API_KEY` dans `.env` (la clé n'est jamais affichée ni c
 python run.py
 ```
 
-Ouvrez http://127.0.0.1:5000. La base est créée automatiquement dans `instance/2gc_converter.sqlite3`.
+Ouvrez http://127.0.0.1:5000. En local, la base SQLite est créée automatiquement
+dans `instance/2gc_converter.sqlite3`.
 
 ## Base de données
 
-La base est visible avec DB Browser for SQLite ou l'extension SQLite Viewer de VS Code :
+La base SQLite locale est visible avec DB Browser for SQLite ou l'extension SQLite Viewer de VS Code :
 
 ```text
 instance/2gc_converter.sqlite3
@@ -85,38 +88,81 @@ pytest
 
 L'API OpenRouter et gTTS doivent être mockés dans les tests afin de ne pas appeler de services externes.
 
-## Déploiement sur Render
+## Déploiement gratuit : Render + Supabase
 
-Le dépôt inclut `render.yaml`, qui configure le service web, Gunicorn, le bilan
-de santé et un disque persistant monté sur `/var/data`. SQLite et les fichiers
-audio y sont tous deux stockés afin de survivre aux redémarrages et déploiements.
+En local, l'application utilise SQLite et un dossier audio local. En production,
+elle utilise PostgreSQL hébergé par Supabase et un bucket privé Supabase Storage.
+Render Free n'a pas de stockage local persistant ; ne définissez donc pas
+`DATABASE_PATH` ou `AUDIO_STORAGE_PATH` comme stockage de production.
 
-1. Poussez la branche contenant `render.yaml` sur GitHub.
-2. Dans Render, créez un **Blueprint** et sélectionnez ce dépôt.
-3. Confirmez la création du service et du disque persistant. Le disque Render
-   nécessite un service payant ; l'offre gratuite utilise un système de fichiers
-   éphémère et ne convient pas à cette configuration SQLite.
-4. Saisissez `OPENROUTER_API_KEY` dans les variables d'environnement du service.
-   `APP_ACCESS_PASSWORD` doit aussi être défini dans Render. `SECRET_KEY` est
-   générée par le Blueprint et les autres variables sont définies dans `render.yaml`.
-5. Attendez la fin du déploiement et vérifiez `/health` sur l'URL Render attribuée.
+### Préparer Supabase
 
-Le démarrage utilise Gunicorn avec un seul worker et plusieurs threads. Gardez
-un seul processus applicatif pour SQLite : ne mettez pas plusieurs instances du
-service derrière le même fichier de base. Le stockage audio et SQLite sont sur le
-même disque persistant ; configurez des sauvegardes régulières du disque.
+1. Créez un projet Supabase sur l'offre Free et choisissez un mot de passe de base
+   de données solide.
+2. Dans **Project Settings → Database → Connection string**, copiez la chaîne
+   **Session pooler** (Render utilise une connexion IPv4). Remplacez le mot de
+   passe placeholder et gardez `sslmode=require` si fourni.
+3. Dans **Storage**, créez un bucket nommé `gtv-audios` et laissez-le **privé**.
+4. Depuis **Project Settings → API**, copiez l'URL du projet et la clé secrète
+   serveur `service_role`. Ne l'utilisez jamais dans le navigateur ni sur GitHub.
 
-Les variables Render attendues :
+### Déployer l’application
 
-| Variable | Utilisation |
-| --- | --- |
-| `SECRET_KEY` | Signature des sessions et protection CSRF, générée par Render |
-| `APP_ACCESS_PASSWORD` | Mot de passe partagé protégeant l’espace éditorial |
-| `OPENROUTER_API_KEY` | Clé OpenRouter, saisie dans le tableau de bord Render |
-| `OPENROUTER_MODEL` | Identifiant du modèle IA configurable |
-| `DATABASE_PATH` | Fichier SQLite sur le disque persistant |
-| `AUDIO_STORAGE_PATH` | Dossier des fichiers audio sur le disque persistant |
-| `APP_ENV` | `production` active les réglages sécurisés derrière le proxy Render |
+1. Dans Render, créez un **Blueprint** depuis le dépôt GitHub `Gotuel/GTv_Studio`.
+2. Le Blueprint utilise le plan **Free**, Gunicorn et `/health`. Il ne crée pas de
+   disque Render.
+3. Renseignez les variables secrètes demandées :
+   - `APP_ACCESS_PASSWORD` : mot de passe partagé des pages éditoriales ;
+   - `OPENROUTER_API_KEY` : nouvelle clé OpenRouter ;
+   - `DATABASE_URL` : chaîne PostgreSQL Session pooler Supabase ;
+   - `SUPABASE_URL` : URL du projet Supabase ;
+   - `SUPABASE_SERVICE_ROLE_KEY` : clé serveur Supabase.
+4. Render génère `SECRET_KEY`. Les tables sont créées automatiquement au premier
+   démarrage. Vérifiez ensuite `https://<service>.onrender.com/health`.
+
+Les articles sont stockés dans PostgreSQL. Les fichiers MP3 sont envoyés au
+bucket privé `gtv-audios`, puis transmis au navigateur par l'application après
+authentification. La clé Supabase n'est jamais envoyée au client.
+
+### Migrer les données SQLite locales
+
+Avant la première migration, effectuez une copie de votre base locale et de
+`instance/audio`. Configurez temporairement `.env` avec les secrets Supabase,
+`DATABASE_URL` et `STORAGE_BACKEND=supabase`, puis exécutez :
+
+```powershell
+python -m flask --app run migrate-local-db
+```
+
+Pour une autre base source :
+
+```powershell
+python -m flask --app run migrate-local-db --source chemin\vers\base.sqlite3
+```
+
+La migration conserve les identifiants et est relançable sans dupliquer les lignes.
+Les audios `ready` doivent exister sous `AUDIO_STORAGE_PATH`; l'outil les envoie
+au bucket avant d'insérer leurs métadonnées. Vérifiez les comptes d'articles,
+versions et audios dans Supabase avant d'exposer le lien Render.
+
+### Limites des offres gratuites
+
+- Render Free met le service en veille après une période sans trafic ; le premier
+  accès suivant peut attendre le redémarrage.
+- Le système de fichiers de Render Free est éphémère ; PostgreSQL et les MP3 sont
+  donc externalisés vers Supabase.
+- Supabase Free peut mettre en pause un projet resté inactif une semaine ; il faut
+  le réactiver depuis Supabase si cela arrive.
+- Les quotas gratuits (base, stockage et bande passante) sont limités. Surveillez
+  leur utilisation dans les tableaux de bord Render et Supabase.
+- Cette combinaison convient à un prototype ou une petite démonstration, pas à
+  une disponibilité professionnelle garantie.
+
+### Configuration Render
+
+`render.yaml` déclare le plan gratuit et demande à Render les variables sensibles
+ci-dessus sans les stocker dans Git. Les variables `DATABASE_URL`, `SUPABASE_URL`
+et `SUPABASE_SERVICE_ROLE_KEY` ne doivent jamais être commitées.
 
 ## Publication GitHub
 

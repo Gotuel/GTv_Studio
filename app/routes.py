@@ -1,7 +1,9 @@
 from datetime import datetime, timezone
+from io import BytesIO
 import hmac
 import logging
-from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, send_from_directory, session, url_for
+from pathlib import Path
+from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, send_file, send_from_directory, session, url_for
 import requests
 
 from .db import get_db
@@ -79,8 +81,9 @@ def logout():
 def dashboard():
     db = get_db()
     stats = db.execute(
-        """SELECT COUNT(*) total,
-        SUM(status = 'draft') drafts, SUM(status = 'validated') validated,
+        """SELECT COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE status = 'draft') AS drafts,
+        COUNT(*) FILTER (WHERE status = 'validated') AS validated,
         (SELECT COUNT(*) FROM audios WHERE status = 'ready') audios FROM articles"""
     ).fetchone()
     recent = db.execute(
@@ -132,12 +135,13 @@ def new_article():
         cursor = db.execute(
             """INSERT INTO articles
             (title, raw_content, level, category_id, source, language, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id""",
             (title, raw, level, int(category_id), source, language, now()),
         )
+        article_id = cursor.fetchone()["id"]
         db.commit()
         flash("Contenu sauvegardé comme brouillon.", "success")
-        return redirect(url_for("main.article_detail", article_id=cursor.lastrowid))
+        return redirect(url_for("main.article_detail", article_id=article_id))
     categories = get_db().execute(
         "SELECT * FROM categories WHERE is_active = 1 ORDER BY name"
     ).fetchall()
@@ -325,9 +329,9 @@ def audio(article_id):
         audio_id = db.execute(
             """INSERT INTO audios
             (article_id, file_path, language, provider, status)
-            VALUES (?, '', ?, 'gtts', 'processing')""",
+            VALUES (?, '', ?, 'gtts', 'processing') RETURNING id""",
             (article_id, article["language"]),
-        ).lastrowid
+        ).fetchone()["id"]
         filename = generate_audio(version["content"], article["language"], article_id)
         db.execute(
             "UPDATE audios SET file_path = ?, status = 'ready' WHERE id = ?",
@@ -354,4 +358,20 @@ def audio(article_id):
 
 @main.get("/audio/<path:filename>")
 def audio_file(filename):
+    if current_app.config["STORAGE_BACKEND"] == "supabase":
+        audio = get_db().execute(
+            "SELECT 1 FROM audios WHERE file_path = ? AND status = 'ready'",
+            (filename,),
+        ).fetchone()
+        if audio is None:
+            return "Fichier audio introuvable.", 404
+        from .storage import download_audio
+
+        content = download_audio(filename)
+        return send_file(
+            BytesIO(content),
+            mimetype="audio/mpeg",
+            as_attachment=request.args.get("download") is not None,
+            download_name=Path(filename).name,
+        )
     return send_from_directory(current_app.config["AUDIO_STORAGE_PATH"], filename)
