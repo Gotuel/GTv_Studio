@@ -3,6 +3,7 @@ import tempfile
 from unittest.mock import Mock, patch
 
 import pytest
+from unittest.mock import patch
 
 from app import create_app
 from app.services import clean_generated_text, generate_article
@@ -44,6 +45,29 @@ def test_homepage_is_dynamic(client):
     assert b"Une actualit" in response.data
 
 
+def test_health_check_is_ready(client):
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.get_json() == {"status": "ok"}
+
+
+def test_shared_password_protects_editorial_pages(client):
+    client.application.config["APP_ACCESS_PASSWORD"] = "team-secret"
+    assert client.get("/").status_code == 200
+    assert client.get("/health").status_code == 200
+    protected = client.get("/dashboard")
+    assert protected.status_code == 302
+    assert protected.headers["Location"].startswith("/login")
+    api_response = client.post("/api/articles/1/generate")
+    assert api_response.status_code == 401
+    assert api_response.get_json()["error"] == "Connexion requise."
+    login = client.post("/login", data={"password": "team-secret"})
+    assert login.status_code == 302
+    assert client.get("/dashboard").status_code == 200
+    assert client.post("/logout").status_code == 302
+    assert client.get("/dashboard").status_code == 302
+
+
 def test_article_creation_and_detail(client):
     response = create_article(client)
     assert response.status_code == 302
@@ -70,6 +94,14 @@ def test_new_article_uses_category_and_creates_no_version(client):
 
 def test_missing_article_returns_404(client):
     assert client.get("/articles/9999").status_code == 404
+
+
+def test_production_requires_secret_key(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    with patch("app.load_dotenv"):
+        with pytest.raises(RuntimeError, match="SECRET_KEY"):
+            create_app({"TESTING": True, "DATABASE_PATH": ":memory:"})
 
 
 def test_article_creation_rejects_invalid_editorial_values(client):

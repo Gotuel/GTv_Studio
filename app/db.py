@@ -101,9 +101,10 @@ def get_db():
         Path(current_app.config["DATABASE_PATH"]).parent.mkdir(
             parents=True, exist_ok=True
         )
-        g.db = sqlite3.connect(current_app.config["DATABASE_PATH"])
+        g.db = sqlite3.connect(current_app.config["DATABASE_PATH"], timeout=15)
         g.db.row_factory = sqlite3.Row
         g.db.execute("PRAGMA foreign_keys = ON")
+        g.db.execute("PRAGMA busy_timeout = 15000")
     return g.db
 
 

@@ -1,9 +1,7 @@
 from datetime import datetime, timezone
+import hmac
 import logging
-from pathlib import Path
-
-from flask import Blueprint, flash, jsonify, redirect, render_template, request, send_from_directory, url_for
-from flask import current_app
+from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, send_from_directory, session, url_for
 import requests
 
 from .db import get_db
@@ -18,6 +16,25 @@ ALLOWED_LEVELS = {"basic", "intermediate", "professional"}
 ALLOWED_LANGUAGES = {"fr", "en"}
 
 
+@main.before_app_request
+def require_editor_access():
+    if not current_app.config["APP_ACCESS_PASSWORD"]:
+        return None
+    if request.endpoint in {"static", "main.index", "main.health", "main.login"}:
+        return None
+    if session_authenticated():
+        return None
+    if request.endpoint == "main.logout":
+        return None
+    if request.path.startswith("/api/"):
+        return jsonify(error="Connexion requise."), 401
+    return redirect(url_for("main.login", next=request.full_path.rstrip("?")))
+
+
+def session_authenticated():
+    return session.get("editor_authenticated") is True
+
+
 def now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -25,6 +42,37 @@ def now():
 @main.get("/")
 def index():
     return render_template("index.html", landing=True)
+
+
+@main.get("/health")
+def health():
+    get_db().execute("SELECT 1").fetchone()
+    return jsonify(status="ok"), 200
+
+
+@main.route("/login", methods=("GET", "POST"))
+def login():
+    if not current_app.config["APP_ACCESS_PASSWORD"]:
+        return redirect(url_for("main.dashboard"))
+    error = None
+    if request.method == "POST":
+        submitted_password = request.form.get("password", "")
+        if hmac.compare_digest(
+            submitted_password, current_app.config["APP_ACCESS_PASSWORD"]
+        ):
+            session["editor_authenticated"] = True
+            next_url = request.args.get("next", "")
+            if next_url.startswith("/") and not next_url.startswith("//") and "\\" not in next_url:
+                return redirect(next_url)
+            return redirect(url_for("main.dashboard"))
+        error = "Mot de passe incorrect."
+    return render_template("login.html", auth_page=True, error=error)
+
+
+@main.post("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("main.index"))
 
 
 @main.get("/dashboard")
@@ -306,4 +354,4 @@ def audio(article_id):
 
 @main.get("/audio/<path:filename>")
 def audio_file(filename):
-    return send_from_directory(Path(current_app.instance_path) / "audio", filename)
+    return send_from_directory(current_app.config["AUDIO_STORAGE_PATH"], filename)

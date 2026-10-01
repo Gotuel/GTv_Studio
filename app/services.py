@@ -102,7 +102,7 @@ def generate_article(title, raw_content, level, category, language):
 def generate_audio(text, language, article_id):
     from gtts import gTTS
 
-    directory = Path(current_app.instance_path) / "audio"
+    directory = Path(current_app.config["AUDIO_STORAGE_PATH"])
     directory.mkdir(parents=True, exist_ok=True)
     filename = f"article-{article_id}-{uuid4().hex}.mp3"
     path = directory / filename

@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: gtv-studio
+    runtime: python
+    plan: starter
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 --worker-class gthread --threads 4 --timeout 120 run:app
+    healthCheckPath: /health
+    disk:
+      name: gtv-studio-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: SECRET_KEY
+        generateValue: true
+      - key: APP_ACCESS_PASSWORD
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        value: nex-agi/nex-n2.5-mini:free
+      - key: DATABASE_PATH
+        value: /var/data/gtv_studio.sqlite3
+      - key: AUDIO_STORAGE_PATH
+        value: /var/data/audio
+      - key: DEBUG
+        value: false

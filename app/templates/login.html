@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Connexion · GTv Studio{% endblock %}
+{% block content %}
+<section class="login-card">
+  <div class="login-mark">GTv<span>Studio</span></div>
+  <p class="landing-kicker"><span></span> ESPACE ÉDITORIAL SÉCURISÉ</p>
+  <h1>Bon retour<br>à la rédaction.</h1>
+  <p class="login-description">Saisissez le mot de passe partagé pour accéder à votre espace de travail GTv Studio.</p>
+  {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+  <form method="post" class="login-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label for="password">Mot de passe d’accès</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+    <button class="button button-blue" type="submit">Accéder à l’espace <span>→</span></button>
+  </form>
+  <small class="login-footnote">Accès réservé aux collaborateurs autorisés.</small>
+</section>
+{% endblock %}

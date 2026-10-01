@@ -15,6 +15,7 @@ GTv_Studio/
 ├── tests/
 ├── instance/              # données locales, ignorées par Git
 ├── .env.example
+├── render.yaml
 ├── requirements.txt
 ├── run.py
 └── README.md
@@ -84,6 +85,39 @@ pytest
 
 L'API OpenRouter et gTTS doivent être mockés dans les tests afin de ne pas appeler de services externes.
 
+## Déploiement sur Render
+
+Le dépôt inclut `render.yaml`, qui configure le service web, Gunicorn, le bilan
+de santé et un disque persistant monté sur `/var/data`. SQLite et les fichiers
+audio y sont tous deux stockés afin de survivre aux redémarrages et déploiements.
+
+1. Poussez la branche contenant `render.yaml` sur GitHub.
+2. Dans Render, créez un **Blueprint** et sélectionnez ce dépôt.
+3. Confirmez la création du service et du disque persistant. Le disque Render
+   nécessite un service payant ; l'offre gratuite utilise un système de fichiers
+   éphémère et ne convient pas à cette configuration SQLite.
+4. Saisissez `OPENROUTER_API_KEY` dans les variables d'environnement du service.
+   `APP_ACCESS_PASSWORD` doit aussi être défini dans Render. `SECRET_KEY` est
+   générée par le Blueprint et les autres variables sont définies dans `render.yaml`.
+5. Attendez la fin du déploiement et vérifiez `/health` sur l'URL Render attribuée.
+
+Le démarrage utilise Gunicorn avec un seul worker et plusieurs threads. Gardez
+un seul processus applicatif pour SQLite : ne mettez pas plusieurs instances du
+service derrière le même fichier de base. Le stockage audio et SQLite sont sur le
+même disque persistant ; configurez des sauvegardes régulières du disque.
+
+Les variables Render attendues :
+
+| Variable | Utilisation |
+| --- | --- |
+| `SECRET_KEY` | Signature des sessions et protection CSRF, générée par Render |
+| `APP_ACCESS_PASSWORD` | Mot de passe partagé protégeant l’espace éditorial |
+| `OPENROUTER_API_KEY` | Clé OpenRouter, saisie dans le tableau de bord Render |
+| `OPENROUTER_MODEL` | Identifiant du modèle IA configurable |
+| `DATABASE_PATH` | Fichier SQLite sur le disque persistant |
+| `AUDIO_STORAGE_PATH` | Dossier des fichiers audio sur le disque persistant |
+| `APP_ENV` | `production` active les réglages sécurisés derrière le proxy Render |
+
 ## Publication GitHub
 
 Avant de publier :
@@ -98,6 +132,8 @@ Le modèle utilisé reste configurable avec `OPENROUTER_MODEL`.
 
 ## Limites actuelles
 
-Cette version est destinée à un usage local ou à un dépôt privé de démonstration.
-Avant une exposition publique, ajoutez une authentification et une protection CSRF
-adaptées au contexte de déploiement.
+En production, l'accès éditorial est protégé par un mot de passe partagé configuré
+dans `APP_ACCESS_PASSWORD`; la page publique et la sonde `/health` restent
+accessibles sans connexion. Cette protection convient à une petite équipe connue,
+mais ne remplace pas des comptes individuels et des rôles pour une utilisation
+multi-utilisateur à grande échelle.
