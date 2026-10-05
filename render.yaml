@@ -19,7 +19,7 @@ services:
       - key: OPENROUTER_API_KEY
         sync: false
       - key: OPENROUTER_MODEL
-        value: nex-agi/nex-n2.5-mini:free
+        value: google/gemma-4-26b-a4b-it:free
       - key: DATABASE_URL
         sync: false
       - key: STORAGE_BACKEND
